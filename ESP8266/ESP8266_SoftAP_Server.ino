@@ -1,98 +1,128 @@
-/*
- *  This sketch demonstrates how to set up a simple HTTP-like server.
- *  The server will set a GPIO pin depending on the request
- *    http://server_ip/gpio/0 will set the GPIO2 low,
- *    http://server_ip/gpio/1 will set the GPIO2 high
- *  server_ip is the IP address of the ESP8266 module, will be 
- *  printed to Serial when the module is connected.
- */
-
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <ESP8266WebServer.h>
 
-const char* ssid = "your-ssid";
-const char* password = "your-password";
 
-// Create an instance of the server
-// specify the port to listen on as an argument
-WiFiServer server(80);
+//////////////////////
+// WiFi Definitions //
+//////////////////////
+const char WiFiAPPSK[] = "sparkfun";
+String httpRequest;  
+int timer1=0;
 
-void setup() {
-  Serial.begin(115200);
-  delay(10);
+int PIN_BTN_GREEN=12;
 
-  // prepare GPIO2
-  pinMode(2, OUTPUT);
-  digitalWrite(2, 0);
-  
-  // Connect to WiFi network
-  Serial.println();
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  
-  WiFi.begin(ssid, password);
-  
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.println("WiFi connected");
-  
-  // Start the server
-  server.begin();
-  Serial.println("Server started");
+/////////////////////
+// Pin Definitions //
+/////////////////////
+const int BLUE_LED = 13; // Thing's onboard, blue LED
+void configuration();
 
-  // Print the IP address
-  Serial.println(WiFi.localIP());
-}
 
-void loop() {
-  // Check if a client has connected
-  WiFiClient client = server.available();
-  if (!client) {
-    return;
-  }
-  
-  // Wait until the client sends some data
-  Serial.println("new client");
-  while(!client.available()){
-    delay(1);
-  }
-  
-  // Read the first line of the request
-  String req = client.readStringUntil('\r');
-  Serial.println(req);
-  client.flush();
-  
-  // Match the request
-  int val;
-  if (req.indexOf("/gpio/0") != -1)
-    val = 0;
-  else if (req.indexOf("/gpio/1") != -1)
-    val = 1;
-  else {
-    Serial.println("invalid request");
-    client.stop();
-    return;
-  }
+ESP8266WebServer  server(80);
 
-  // Set GPIO2 according to the request
-  digitalWrite(2, val);
-  
-  client.flush();
 
-  // Prepare the response
-  String s = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE HTML>\r\n<html>\r\nGPIO is now ";
-  s += (val)?"high":"low";
+void handleRoot() {
+  String s ;
+  s += "<!DOCTYPE HTML>\r\n<html>\r\n";
+  s +="<h1>Config du SSID et Mot de passe </h1>";
+  s += "<form action='http://192.168.4.1/submit' method='POST'> SSID:<br><input type=textt name=ssid value='ssid'>";
+  s += "<br> Mot de passe: <br> <input type=text name=mdp value='mdp'>";
+  s+= "<br><br><input type='submit' value='Comfirme'></form> ";
   s += "</html>\n";
-
-  // Send the response to the client
-  client.print(s);
-  delay(1);
-  Serial.println("Client disonnected");
-
-  // The client will actually be disconnected 
-  // when the function returns and 'client' object is detroyed
+  server.send(200, "text/html", s);  
 }
 
+
+void handleSubmit()
+{
+  String ssid = server.arg("ssid");
+  String mdp =  server.arg("mdp");
+  char *cssid = (char*)ssid.c_str();
+  char*cmdp =(char*)mdp.c_str();
+  String s ;
+  int timer=0;
+  s += "<!DOCTYPE HTML>\r\n<html>\r\n";
+  s +="<h1>Connection a la box avec vos identifiant</h1>";
+   server.send(200, "text/html", s);
+   WiFi.mode(WIFI_STA);
+  WiFi.begin(cssid,cmdp);
+  while ((WiFi.status() != WL_CONNECTED && timer < 10)) {
+    delay(200);
+    digitalWrite(BLUE_LED,LOW);
+    delay(500);
+    digitalWrite(BLUE_LED,HIGH);
+    delay(200);
+    Serial.println("Connecting ...");
+    timer++;
+  }//fin du while
+  if(timer == 10)
+  {
+    Serial.println("echec retour mode config");
+    configuration();
+  }
+  else
+  {
+  String c ;
+  c += "<!DOCTYPE HTML>\r\n<html>\r\n";
+  c +="<h1>Vous etes connecter</h1>";
+  server.send(200, "text/html", c);
+  IPAddress myAddress = WiFi.localIP();
+  Serial.println(myAddress);
+  digitalWrite(BLUE_LED,LOW);
+  timer1 =100;
+  }
+}
+
+void setup() 
+{
+  Serial.begin(115200);
+  pinMode(PIN_BTN_GREEN, INPUT);
+  pinMode(BLUE_LED, OUTPUT);  
+  WiFi.mode(WIFI_STA);
+}
+
+
+void configuration()
+{
+  digitalWrite(BLUE_LED,HIGH);
+  WiFi.disconnect();
+  WiFi.mode(WIFI_AP);
+  
+  char AP_NameString[] = "ESP8266TEST";
+  
+  WiFi.softAP(AP_NameString, WiFiAPPSK);
+  server.on("/", handleRoot);
+  server.on("/submit", handleSubmit);
+  server.begin();
+  
+ 
+}
+
+void loop() 
+{
+  int val=0;
+  delay(1000);
+  Serial.println(timer1);
+  
+  val = digitalRead(PIN_BTN_GREEN);
+  if (val == HIGH)
+  {
+    timer1++;
+  }    
+  if(timer1 == 3)
+  {
+    configuration();
+  }
+  else if(timer1 < 99)
+    {
+      server.handleClient();
+      Serial.println("AP");
+    } 
+  if(timer1==100)
+  {
+    Serial.println("Websocket");
+  }
+}
+
+ 
