@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+ <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+ <meta http-equiv="Content-Language" content="fr" />
+ <meta name="author" content="Duroux Erwan" />
+ <title>
+  Administration de la bdd
+ </title>
+ 
+</head>
+<!--
+Delimitation head body
+-->
+<body>
+	<p>
+	<h1>Ajout d'un appareil à un client</h1>
+	<form action="ajout.php" method="post">
+		Prise :<input type="text" placeholder="AdresseMac" name="AdresseMacAjout" required><br />
+		Nom :<input type="text" placeholder="Nom" name="NomAjout" required><br />
+		<input type="submit" placeholder="" name="AjouterAppareil" ><br />
+	</form>
+	</p>
+	
+	<p>
+	<h1>Creation d'un client</h1>
+	<form action="creation.php" method="post">
+		Prise :<input type="text" placeholder="AdresseMac" name="AdresseMacCreation" required><br />
+		Nom :<input type="text" placeholder="Nom" name="NomCreation" required><br />
+		Mot de passe :<input type="text" placeholder="Mot de passe" name="PasswordCreation" required><br />
+		<input type="submit" placeholder="" name="AjouterAppareil" ><br />
+	</form>
+	</p>
+	<p>
+	<h1>Consultation des clients</h1>
+	<form action="consultation.php" method="post">
+		<input type="submit" placeholder="Consulter" name="Consultation" ><br />
+	</form>
+	</p>
+	<p>
+	<h1>Consultation les prise du client precis </h1>
+	<form action="consultationIndividuel.php" method="post">
+		Nom :<input type="text" placeholder="NomIndividuel" name="NomIndividuel" required><br />
+		<input type="submit" placeholder="Consulter" name="Consultation" ><br />
+	</form>
+	</p>
+			
+</body>
+</html>
+
+
+
