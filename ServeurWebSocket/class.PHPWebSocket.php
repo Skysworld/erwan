@@ -20,14 +20,14 @@ class PHPWebSocket
 	const WS_MAX_CLIENTS = 100;
 
 	// maximum amount of clients that can be connected at one time on the same IP v4 address
-	const WS_MAX_CLIENTS_PER_IP = 15;
+	const WS_MAX_CLIENTS_PER_IP = 100;
 
 	// amount of seconds a client has to send data to the server, before a ping request is sent to the client,
 	// if the client has not completed the opening handshake, the ping request is skipped and the client connection is closed
-	const WS_TIMEOUT_RECV = 10;
+	const WS_TIMEOUT_RECV = 20000000;
 
 	// amount of seconds a client has to reply to a ping request, before the client connection is closed
-	const WS_TIMEOUT_PONG = 5;
+	const WS_TIMEOUT_PONG = 10;
 
 	// the maximum length, in bytes, of a frame's payload data (a message consists of 1 or more frames), this is also internally limited to 2,147,479,538
 	const WS_MAX_FRAME_PAYLOAD_RECV = 100000;
@@ -134,7 +134,7 @@ class PHPWebSocket
 						// client socket changed
 						$buffer = '';
 						$bytes = @socket_recv($socket, $buffer, 4096, 0);
-
+						
 						if ($bytes === false) {
 							// error on recv, remove client socket (will check to send close frame)
 							$this->wsSendClientClose($clientID, self::WS_STATUS_PROTOCOL_ERROR);
@@ -582,27 +582,28 @@ class PHPWebSocket
 	}
 	function wsProcessClientHandshake($clientID, &$buffer) {
 		// fetch headers and request line
+		
 		$sep = strpos($buffer, "\r\n\r\n");
 		if (!$sep) return false;
-
+		
 		$headers = explode("\r\n", substr($buffer, 0, $sep));
 		$headersCount = sizeof($headers); // includes request line
 		if ($headersCount < 1) return false;
-
+		
 		// fetch request and check it has at least 3 parts (space tokens)
 		$request = &$headers[0];
 		$requestParts = explode(' ', $request);
 		$requestPartsSize = sizeof($requestParts);
 		if ($requestPartsSize < 3) return false;
-
+		
 		// check request method is GET
 		if (strtoupper($requestParts[0]) != 'GET') return false;
-
+		
 		// check request HTTP version is at least 1.1
 		$httpPart = &$requestParts[$requestPartsSize - 1];
 		$httpParts = explode('/', $httpPart);
 		if (!isset($httpParts[1]) || (float) $httpParts[1] < 1.1) return false;
-
+		
 		// store headers into a keyed array: array[headerKey] = headerValue
 		$headersKeyed = array();
 		for ($i=1; $i<$headersCount; $i++) {
@@ -611,12 +612,13 @@ class PHPWebSocket
 
 			$headersKeyed[trim($parts[0])] = trim($parts[1]);
 		}
-
+		
 		// check Host header was received
 		if (!isset($headersKeyed['Host'])) return false;
 
 		// check Sec-WebSocket-Key header was received and decoded value length is 16
 		if (!isset($headersKeyed['Sec-WebSocket-Key'])) return false;
+
 		$key = $headersKeyed['Sec-WebSocket-Key'];
 		if (strlen(base64_decode($key)) != 16) return false;
 
