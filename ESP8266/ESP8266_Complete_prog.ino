@@ -1,72 +1,79 @@
-
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>
 #include <Arduino.h>
-#include <ESP8266WiFiMulti.h>
 #include <WebSocketsClient.h>
-#include <Hash.h>
 
-ESP8266WiFiMulti WiFiMulti;
 WebSocketsClient webSocket;
 
 //////////////////////
 // WiFi Definitions //
 //////////////////////
-const char WiFiAPPSK[] = "sparkfun";
-String httpRequest;  
-int timer1=0;
+const char WiFiPassword[] = "123456789"; //Password of the ESP locale WIFI 
+char AP_NameString[] =  "ESP826612" ; // Name of the ESPs SSID in local WIFI
 
 /////////////////////
 // Pin Definitions //
 /////////////////////
-int PIN_BTN_GREEN=12;
-int LED1 = 13; //16 
-int LED2 = 15; //15
-int LED3 = 4;//12
+int PIN_BTN =16;
+int PIN_LED_BLUE = 13;
+int PIN_LED_RED = 15;
+int PIN_LED_GREEN = 12;
+int LED1= 4; 
+int LED2 = 5;
+int LED3 = 0;
 int LED4 = 2;
-int LED5 = 0;
+int LED5 = 14;
 
-//Autres
-const char* ssid     = "ProjetNETGEAR2";
-const char* password = "projetIRIS";
+/////////////////////
+//      Other      //
+/////////////////////
 uint8_t MAC_array[6];
 char MAC_char[18];
-String commande;
+char Request_MAC[19];
+bool reboot_flag = false;
+int timer_push_button =0;
+enum state {NO_CONNECTED, CONNECTED, CONFIGURATION, RUNNING};
 
-//Definition des methodes //evite les probleme d'appel
+//////////////////////////
+//Definition of methods//
+/////////////////////////
 void configuration();
-
 
 ESP8266WebServer  server(80);
 
-
-
+//
+//
+//
+//
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t lenght) {
     switch(type) {
         case WStype_DISCONNECTED:
         {
-            Serial.printf("Disconnected!\n");
+            digitalWrite(PIN_LED_RED, LOW);
         }
         break;
           
         case WStype_CONNECTED:
                 {
-                Serial.printf("[WSc] Connected to url: %s\n",  payload);
-                //Envoie de l'adresse mac 0
-                 WiFi.macAddress(MAC_array);
+                Serial.printf("Connected to WS Server",  payload);
+                 WiFi.macAddress(MAC_array);//Get the MAC Address of the ESP 
                  int i = 0;
                 for (i; i < sizeof(MAC_array)-1; ++i){
                 sprintf(MAC_char,"%s%02x:",MAC_char,MAC_array[i]);}
-                 sprintf(MAC_char,"%s%02x",MAC_char,MAC_array[i]);
-                 //Envoie de l'adresse mac 
-                 webSocket.sendTXT(MAC_char);
+                 sprintf(MAC_char,"%s%02x",MAC_char,MAC_array[i]);//Make the MAC Address from basic string to format "XX:XX:XX"
+                 webSocket.sendTXT(MAC_char);//Send a message "MacAddress" for the server to associated with WS's ID
                 delay(1000);
-                webSocket.sendTXT(MAC_char);            
+                digitalWrite(PIN_LED_RED,HIGH);//Turn on the RED LED 
+                Request_MAC[0]='#';
+                strcat(Request_MAC,MAC_char);
+                webSocket.sendTXT(Request_MAC);
+                memset(MAC_char, 0 ,18);//Clean the MAC_char array for avoiding concatenation of 2 message
+                memset(Request_MAC, 0 ,18);
                 }
                 break;
         case WStype_TEXT:
-            Serial.printf("TEXT DU SERVEUR %s\n", payload);
+            Serial.printf("Message received %s", payload);
             
             if (payload[0]=='1')
               digitalWrite(LED1, LOW);
@@ -90,127 +97,148 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t lenght) {
               digitalWrite(LED5, HIGH);
             break;
     }
-
 }
-
+//This function show the config page of the SSID and Password 
+//you must connect to 192.168.1.4 to see this page
+//
+//TODO : make the UI adaptive
 void handleRoot() {
-  String s ;
-  s += "<!DOCTYPE HTML>\r\n<html>\r\n";
-  s +="<h1>Config du SSID et Mot de passe </h1>";
-  s += "<form action='http://192.168.4.1/submit' method='POST'> SSID:<br><input type=textt name=ssid value='ssid'>";
-  s += "<br> Mot de passe: <br> <input type=text name=mdp value='mdp'>";
-  s+= "<br><br><input type='submit' value='Comfirme'></form> ";
-  s += "</html>\n";
-  server.send(200, "text/html", s);  
+  String page ;
+  page += "<!DOCTYPE HTML>\r\n<html>\r\n";
+  page +="<h1>Config du SSID et Mot de passe </h1>";
+  page += "<form action='http://192.168.4.1/submit' method='POST'> SSID:<br><input type=textt name=ssid value='ssid'>";
+  page += "<br> Mot de passe: <br> <input type=text name=mdp value='mdp'>";
+  page += "<br><br><input type='submit' value='Comfirme'></form> ";
+  page += "</html>\n";
+  server.send(200, "text/html", page);  
 }
 
-
+//HandleSubmit let the ESP to manage the SSID and password given by the user
+//to connect the ESP to WIFI of the user
+//A timer of 20 seconde is use to detect and connect the ESP
+//If the ESP failed to connect to WIFI , the function configuration() is called 
 void handleSubmit()
 {
   String ssid = server.arg("ssid");
-  String mdp =  server.arg("mdp");
+  String password = server.arg("mdp");
   char *cssid = (char*)ssid.c_str();
-  char*cmdp =(char*)mdp.c_str();
-  String s ;
-  int timer=0;
-  s += "<!DOCTYPE HTML>\r\n<html>\r\n";
-  s +="<h1>Connection a la box avec vos identifiant</h1>";
-   server.send(200, "text/html", s);
-   WiFi.mode(WIFI_STA);
-  WiFi.begin(cssid,cmdp);
-  while ((WiFi.status() != WL_CONNECTED && timer < 10)) {
-    delay(200);
-    digitalWrite(LED1,LOW);
-    delay(500);
-    digitalWrite(LED1,HIGH);
-    delay(200);
-    Serial.println("Connecting ...");
-    timer++;
-  }//fin du while
-  if(timer == 10)
+  char *cmdp =(char*)password.c_str();
+  String page;
+  int timer =0;
+  page += "<!DOCTYPE HTML>\r\n<html>\r\n";
+  page +="<h1>Tentative de connexion avec la box...</h1>";
+   server.send(200, "text/html", page);
+   WiFi.mode(WIFI_STA);  //The ESP switch on Station mode
+  WiFi.begin(cssid,cmdp); //Try to connect ESP with the SSID and Password provide
+  while ((WiFi.status() != WL_CONNECTED && timer < 10))
   {
-    Serial.println("echec retour mode config");
+    delay(200);
+    digitalWrite(PIN_LED_BLUE,LOW);
+    delay(500);
+    digitalWrite(PIN_LED_BLUE,HIGH);
+    delay(200);
+    timer++;
+  }
+  if(timer == 20)
+  {
     configuration();
   }
   else
   {
-  String c ;
-  c += "<!DOCTYPE HTML>\r\n<html>\r\n";
-  c +="<h1>Vous etes connecter</h1>";
-  server.send(200, "text/html", c);
-  IPAddress myAddress = WiFi.localIP();
-  Serial.println(myAddress);
-  digitalWrite(LED1,LOW);
-  webSocket.begin("192.168.0.36", 9300);
+  digitalWrite(PIN_LED_BLUE,LOW);
+  digitalWrite(PIN_LED_GREEN,HIGH);
+  webSocket.begin("172.17.50.156", 9300);
   webSocket.onEvent(webSocketEvent);
-  timer1 =100;
+  Serial.println(WiFi.localIP());
+  Serial.println(WiFi.SSID());
   }
 }
 
+//Basic function of the Arduino program
+//Call when the ESP start
+//Set up the I/O of the ESP
+//Try to connect to WIFI which is stored in the flash memory (previous assigned SSID/Password)
 void setup() 
 {
-  pinMode(LED1, OUTPUT);
-    pinMode(LED2, OUTPUT);
-    pinMode(LED2, OUTPUT);
-    pinMode(LED3, OUTPUT);
-    pinMode(LED4, OUTPUT);
-    pinMode(LED5, OUTPUT);
-    digitalWrite(LED1, LOW);
-    digitalWrite(LED2, LOW);
-    digitalWrite(LED3, LOW);
-    digitalWrite(LED4, LOW);
-    digitalWrite(LED5, LOW);
-  Serial.begin(115200);
-  pinMode(PIN_BTN_GREEN, INPUT);
-  pinMode(LED1, OUTPUT);  
-  WiFi.mode(WIFI_STA);
+  counter = false;
+  pinMode(LED1, OUTPUT);//Set the ouput GPIO for the relay
+  pinMode(LED2, OUTPUT);//Set the ouput GPIO for the relay
+  pinMode(LED2, OUTPUT);//Set the ouput GPIO for the relay
+  pinMode(LED3, OUTPUT);//Set the ouput GPIO for the relay
+  pinMode(LED4, OUTPUT);//Set the ouput GPIO for the relay
+  pinMode(LED5, OUTPUT);//Set the ouput GPIO for the relay
+  digitalWrite(LED1, LOW);//Set the ouput GPIO for the relay at LOW statement 
+  digitalWrite(LED2, LOW);//Set the ouput GPIO for the relay at LOW statement
+  digitalWrite(LED3, LOW);//Set the ouput GPIO for the relay at LOW statement
+  digitalWrite(LED4, LOW);//Set the ouput GPIO for the relay at LOW statement
+  digitalWrite(LED5, LOW);//Set the ouput GPIO for the relay at LOW statement
+  Serial.begin(115200);//Set the serial baud rate for displaying
+  pinMode(PIN_LED_BLUE, OUTPUT);//Set the GPIO for LED 
+  pinMode(PIN_LED_GREEN, OUTPUT);//Set the GPIO for LED
+  pinMode(PIN_LED_RED, OUTPUT);//Set the GPIO for LED
+  WiFi.mode(WIFI_STA);//Put the ESP in Station mode
+  delay(500);
+  WiFi.begin("","");//Charge the previous SSID/Pass stored in flash memory      
 }
 
-
+//This function enter the mode configuration of the ESP
+//Use the previous function to make the user see the pages
+//on 192.168.1.4
+//
 void configuration()
 {
-  digitalWrite(LED1,HIGH);
-  WiFi.disconnect();
-  WiFi.mode(WIFI_AP);
-  
-  char AP_NameString[] = "ESP8266TEST";
-  
-  WiFi.softAP(AP_NameString, WiFiAPPSK);
-  server.on("/", handleRoot);
-  server.on("/submit", handleSubmit);
-  server.begin();
-  
- 
+   WiFi.disconnect();// Disconnect the ESP from the WIFI 
+   delay(500);
+   if (WiFi.status() != WL_CONNECTED) //Enter the condition if the ESP isnot connected to WIFI 
+   {
+    digitalWrite(PIN_LED_GREEN, LOW);
+   }
+  Serial.println("Mode manual");
+  WiFi.mode(WIFI_AP);//Set the WIFI to AP mode
+  WiFi.softAP(AP_NameString, WiFiPassword);//Set the WIFI access Point for the configuration
+  server.on("/", handleRoot);//Binding for the function 
+  server.on("/submit", handleSubmit);//Binding
+  server.begin(); //Start the server of configuration for connecting the ESP to the WIFI BOX 
 }
+//
+//
+//
+//
 
 void loop() 
 {
   int val=0;
-  delay(1000);
-  Serial.println(timer1);
-  
-  val = digitalRead(PIN_BTN_GREEN);
-  if (val == HIGH)
+  delay(100);
+  if(WiFi.status() == WL_CONNECTED and reboot_flag == false) // Operate when you turn off the esp, let the esp to reconnect to the WS server
   {
-    timer1++;
-  }    
-  if(timer1 == 3)
-  {
-    configuration();
+    reboot_flag = true;
+    digitalWrite(PIN_LED_GREEN, HIGH);
+    webSocket.begin("172.17.50.156", 9300); // Init the websocket IP address and port
+    webSocket.onEvent(webSocketEvent); // Binding between event and function 
   }
-  if(timer1 < 99)
-    {
-      server.handleClient();
-      Serial.println("AP");
-    } 
-  if(timer1==100)
+  if(WiFi.status() != WL_CONNECTED) // If the ESP is not connected 
   {
-    
-    webSocket.loop();
+    digitalWrite(PIN_LED_GREEN, LOW);// Turn off the GREEN LED 
   }
-  if(timer1>103)
+  val = digitalRead(PIN_BTN);//Read of the configuration button
+  if (val == LOW) // Enter this conditiion if the button is pressed 
   {
-    timer1=0;
+    timer_push_button++;
+  }
+  else //If the button isnot pressed
+  {
+    timer_push_button=0; 
+  }
+  if(timer_push_button == 30) //Enter the configuration mode
+  {
+    timer_push_button=0;
+    digitalWrite(PIN_LED_BLUE, HIGH); // Turn on the BLUE LED on the ESP
+    configuration();//Launch the function of configuration
+  }
+  else // Normal state of the ESP
+  {
+    server.handleClient();//Start the server of configuration loop
+    webSocket.loop();//Start the WEBSOCKET client loop
   }
 }
 
