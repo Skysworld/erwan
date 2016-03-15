@@ -33,7 +33,9 @@ char MAC_char[18];
 char Request_MAC[19];
 bool reboot_flag = false;
 int timer_push_button =0;
-enum state {NO_CONNECTED, CONNECTED, CONFIGURATION, RUNNING};
+enum connection {NO_CONNECTED,CONNECTED,CONFIGURATION};
+connection state;
+
 
 //////////////////////////
 //Definition of methods//
@@ -63,7 +65,6 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t lenght) {
                 sprintf(MAC_char,"%s%02x:",MAC_char,MAC_array[i]);}
                  sprintf(MAC_char,"%s%02x",MAC_char,MAC_array[i]);//Make the MAC Address from basic string to format "XX:XX:XX"
                  webSocket.sendTXT(MAC_char);//Send a message "MacAddress" for the server to associated with WS's ID
-                delay(1000);
                 digitalWrite(PIN_LED_RED,HIGH);//Turn on the RED LED 
                 Request_MAC[0]='#';
                 strcat(Request_MAC,MAC_char);
@@ -139,18 +140,20 @@ void handleSubmit()
     delay(200);
     timer++;
   }
-  if(timer == 20)
+  if(WiFi.status() == WL_CONNECTED)
   {
-    configuration();
-  }
-  else
-  {
+    delay(500);
+  reboot_flag==true;
   digitalWrite(PIN_LED_BLUE,LOW);
   digitalWrite(PIN_LED_GREEN,HIGH);
   webSocket.begin("172.17.50.156", 9300);
   webSocket.onEvent(webSocketEvent);
   Serial.println(WiFi.localIP());
-  Serial.println(WiFi.SSID());
+  state= CONNECTED;
+  }
+  else
+  {
+    state=CONFIGURATION;
   }
 }
 
@@ -160,7 +163,8 @@ void handleSubmit()
 //Try to connect to WIFI which is stored in the flash memory (previous assigned SSID/Password)
 void setup() 
 {
-  counter = false;
+  reboot_flag = false;
+  state=NO_CONNECTED;
   pinMode(LED1, OUTPUT);//Set the ouput GPIO for the relay
   pinMode(LED2, OUTPUT);//Set the ouput GPIO for the relay
   pinMode(LED2, OUTPUT);//Set the ouput GPIO for the relay
@@ -178,7 +182,8 @@ void setup()
   pinMode(PIN_LED_RED, OUTPUT);//Set the GPIO for LED
   WiFi.mode(WIFI_STA);//Put the ESP in Station mode
   delay(500);
-  WiFi.begin("","");//Charge the previous SSID/Pass stored in flash memory      
+  WiFi.begin("","");//Charge the previous SSID/Pass stored in flash memory
+  delay(1000); 
 }
 
 //This function enter the mode configuration of the ESP
@@ -187,18 +192,21 @@ void setup()
 //
 void configuration()
 {
-   WiFi.disconnect();// Disconnect the ESP from the WIFI 
+   WiFi.disconnect();// Disconnect the ESP from the WIFI
    delay(500);
    if (WiFi.status() != WL_CONNECTED) //Enter the condition if the ESP isnot connected to WIFI 
    {
     digitalWrite(PIN_LED_GREEN, LOW);
    }
-  Serial.println("Mode manual");
+  delay(500);
   WiFi.mode(WIFI_AP);//Set the WIFI to AP mode
+  delay(500);
   WiFi.softAP(AP_NameString, WiFiPassword);//Set the WIFI access Point for the configuration
+  delay(500);
   server.on("/", handleRoot);//Binding for the function 
   server.on("/submit", handleSubmit);//Binding
   server.begin(); //Start the server of configuration for connecting the ESP to the WIFI BOX 
+  
 }
 //
 //
@@ -207,21 +215,9 @@ void configuration()
 
 void loop() 
 {
-  int val=0;
   delay(100);
-  if(WiFi.status() == WL_CONNECTED and reboot_flag == false) // Operate when you turn off the esp, let the esp to reconnect to the WS server
-  {
-    reboot_flag = true;
-    digitalWrite(PIN_LED_GREEN, HIGH);
-    webSocket.begin("172.17.50.156", 9300); // Init the websocket IP address and port
-    webSocket.onEvent(webSocketEvent); // Binding between event and function 
-  }
-  if(WiFi.status() != WL_CONNECTED) // If the ESP is not connected 
-  {
-    digitalWrite(PIN_LED_GREEN, LOW);// Turn off the GREEN LED 
-  }
-  val = digitalRead(PIN_BTN);//Read of the configuration button
-  if (val == LOW) // Enter this conditiion if the button is pressed 
+  
+  if (digitalRead(PIN_BTN) == LOW) // Enter this conditiion if the button is pressed 
   {
     timer_push_button++;
   }
@@ -231,15 +227,44 @@ void loop()
   }
   if(timer_push_button == 30) //Enter the configuration mode
   {
-    timer_push_button=0;
-    digitalWrite(PIN_LED_BLUE, HIGH); // Turn on the BLUE LED on the ESP
-    configuration();//Launch the function of configuration
+    state = CONFIGURATION;
+    timer_push_button=0; 
   }
-  else // Normal state of the ESP
-  {
-    server.handleClient();//Start the server of configuration loop
-    webSocket.loop();//Start the WEBSOCKET client loop
-  }
+  
+ switch (state){
+  
+  case CONNECTED:
+    if (reboot_flag == false)
+    {
+      Serial.println("dans la boucle if");
+      reboot_flag = true;
+      digitalWrite(PIN_LED_GREEN, HIGH);
+      webSocket.begin("172.17.50.156", 9300); // Init the websocket IP address and port
+      webSocket.onEvent(webSocketEvent); 
+    }
+    else // Normal state of the ESP
+    {
+      webSocket.loop();//Start the WEBSOCKET client loop
+    }
+    break;
+    
+   case CONFIGURATION:
+     timer_push_button=0;
+     digitalWrite(PIN_LED_BLUE, HIGH); // Turn on the BLUE LED on the ESP
+     digitalWrite(PIN_LED_RED, LOW);
+     configuration();//Launch the function of configuration
+     server.handleClient();//Start the server of configuration loop     
+     break;
+     
+   case NO_CONNECTED:
+    if(WiFi.status() == WL_CONNECTED)
+     {
+    state=CONNECTED;    
+    }
+    digitalWrite(PIN_LED_GREEN, LOW);// Turn off the GREEN LED
+    break;
+
+ }  
 }
 
  
